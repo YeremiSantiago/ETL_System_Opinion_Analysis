@@ -1,0 +1,19 @@
+[
+  {
+    "Name": "Nuevo perfil",
+    "Projects": [
+      {
+        "Path": "OpinionAnalytics.Api\\OpinionAnalytics.Api.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "OpinionAnalytics.WorkerServiceLoadDWH\\OpinionAnalytics.WorkerServiceLoadDwh.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "OpinionAnalytics.Web\\OpinionAnalytics.Web.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]
