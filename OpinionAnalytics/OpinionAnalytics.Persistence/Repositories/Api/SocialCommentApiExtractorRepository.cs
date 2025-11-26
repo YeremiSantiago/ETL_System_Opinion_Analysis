@@ -1,5 +1,6 @@
 ﻿using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
+using OpinionAnalytics.Domain.Dtos;
 using OpinionAnalytics.Domain.Entities.Api;
 using System.Text.Json;
 
@@ -92,14 +93,28 @@ namespace OpinionAnalytics.Persistence.Repositories.Api
                 var stopwatch = System.Diagnostics.Stopwatch.StartNew();
                 
                 var response = await _httpClient.GetStringAsync(apiUrl);
-                var comments = JsonSerializer.Deserialize<List<SocialCommentView>>(response, new JsonSerializerOptions
+
+               
+                var dtoComments = JsonSerializer.Deserialize<List<SocialCommentExtractionDto>>(response, new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+                var mapped = dtoComments?.Select(c => new SocialCommentView
                 {
-                    PropertyNameCaseInsensitive = true
-                });
+                    IdComment = c.IdComment,
+                    IdCliente = c.IdCliente,
+                    IdProducto = c.IdProducto,
+                    Fuente = c.Fuente,
+                    Fecha = c.Fecha,
+                    Comentario = c.Comentario,
+                    ClienteNombre = c.ClienteNombre,
+                    ClienteEmail = c.ClienteEmail,
+                    ProductoNombre = c.ProductoNombre,
+                    ProductoCategoria = c.ProductoCategoria,
+                    TipoFuente = c.TipoFuente
+                }).ToList();
 
                 stopwatch.Stop();
                 
-                _cachedComments = comments ?? new List<SocialCommentView>();
+                _cachedComments = mapped ?? new List<SocialCommentView>();
                 _lastCacheTime = DateTime.UtcNow;
                 
                 _logger.LogInformation("✅ API cargada: {Count} registros en {Time}ms", 
@@ -110,14 +125,12 @@ namespace OpinionAnalytics.Persistence.Repositories.Api
                 _logger.LogWarning("⚠️ API no disponible: {Message}. Continuando sin datos de API.", ex.Message);
                 _cachedComments = new List<SocialCommentView>();
                 _lastCacheTime = DateTime.UtcNow;
-              
             }
             catch (Exception ex)
             {
                 _logger.LogError(ex, "❌ Error inesperado cargando comentarios desde API");
                 _cachedComments = new List<SocialCommentView>();
                 _lastCacheTime = DateTime.UtcNow;
-               
             }
         }
 
@@ -126,7 +139,7 @@ namespace OpinionAnalytics.Persistence.Repositories.Api
             try
             {
                 _logger.LogInformation("🔄 Forzando recarga de cache de API");
-                _cachedComments.Clear();  
+                _cachedComments?.Clear();
                 await LoadFromApiAsync(); 
                 _logger.LogInformation("✅ Cache de API refrescado exitosamente");
             }

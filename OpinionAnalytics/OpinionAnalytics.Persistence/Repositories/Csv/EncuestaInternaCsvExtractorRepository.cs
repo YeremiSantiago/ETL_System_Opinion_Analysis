@@ -40,7 +40,7 @@ namespace OpinionAnalytics.Persistence.Repositories.Csv
 
             using var reader = new StringReader(await File.ReadAllTextAsync(filePath));
             using var csv = new CsvReader(reader, CultureInfo.InvariantCulture);
-
+            csv.Context.RegisterClassMap<EncuestaInternaMap>();
             var records = csv.GetRecords<EncuestaInterna>().ToList();
             _encuestas.AddRange(records);
 

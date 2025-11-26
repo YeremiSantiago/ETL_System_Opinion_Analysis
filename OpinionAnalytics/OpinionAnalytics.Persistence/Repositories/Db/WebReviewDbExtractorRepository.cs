@@ -1,18 +1,22 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using OpinionAnalytics.Domain.Entities.Db;
+using OpinionAnalytics.Domain.Interfaces;
 using OpinionAnalytics.Persistence.Repositories.Db.Context;
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace OpinionAnalytics.Persistence.Repositories.Db
 {
     public class WebReviewDbExtractorRepository : ReaderRepository<WebReviewView>, IWebReviewDbExtractorRepository
     {
+        private readonly ApplicationDbContext _context;
+
         public WebReviewDbExtractorRepository(ApplicationDbContext context) : base(context)
         {
+            _context = context;
         }
 
         public async Task<IEnumerable<WebReviewView>> GetByDateRangeAsync(DateTime startDate, DateTime endDate)
@@ -37,6 +41,13 @@ namespace OpinionAnalytics.Persistence.Repositories.Db
                 .Where(w => w.Rating >= minRating && w.Rating <= maxRating)
                 .AsNoTracking()
                 .ToListAsync();
+        }
+
+        public async Task<IEnumerable<WebReviewView>> GetForDimensionLoadingAsync(CancellationToken cancellationToken = default)
+        {
+            return await _dbSet
+                .AsNoTracking()
+                .ToListAsync(cancellationToken);
         }
     }
 }

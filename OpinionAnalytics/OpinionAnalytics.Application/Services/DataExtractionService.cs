@@ -6,12 +6,10 @@ using OpinionAnalytics.Domain.Dtos;
 using OpinionAnalytics.Domain.Entities.Api;
 using OpinionAnalytics.Domain.Entities.Csv;
 using OpinionAnalytics.Domain.Entities.Db;
+using OpinionAnalytics.Domain.Interfaces;
 using OpinionAnalytics.Persistence.Repositories.Api;
 using OpinionAnalytics.Persistence.Repositories.Csv;
-using OpinionAnalytics.Persistence.Repositories.Db;
-
-
-    using System.Diagnostics;
+using System.Diagnostics;
 
 namespace OpinionAnalytics.Application.Services
 {
@@ -74,7 +72,7 @@ namespace OpinionAnalytics.Application.Services
                 _logger.LogInformation("Extrayendo datos de base de datos SAOC...");
 
                 var stopwatch = Stopwatch.StartNew();
-                var data = await _dbRepository.GetAllAsync();
+                var data = await _dbRepository.GetForDimensionLoadingAsync(); 
                 stopwatch.Stop();
 
                 _logger.LogInformation("BD extraída: {Count} registros en {Time}ms",

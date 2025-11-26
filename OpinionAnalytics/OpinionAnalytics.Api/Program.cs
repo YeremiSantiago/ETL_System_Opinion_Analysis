@@ -7,6 +7,8 @@ namespace OpinionAnalytics.Api
     {
         public static void Main(string[] args)
         {
+            AppContext.SetSwitch("Switch.Microsoft.Data.SqlClient.UseManagedNetworkingOnWindows", true);
+
             var builder = WebApplication.CreateBuilder(args);
 
             builder.Services.AddControllers();
