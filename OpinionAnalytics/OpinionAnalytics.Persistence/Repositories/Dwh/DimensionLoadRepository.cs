@@ -16,6 +16,7 @@ namespace OpinionAnalytics.Persistence.Repositories.Dwh
 {
     public class DimensionLoadRepository : IDimensionLoadRepository
     {
+       
         private readonly DwhDbContext _context;
         private readonly ILogger<DimensionLoadRepository> _logger;
 
@@ -35,7 +36,7 @@ namespace OpinionAnalytics.Persistence.Repositories.Dwh
                 return result;
             }
 
-            NormalizeDto(dto);
+            NormalizeDto(dto, _logger);
 
             using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
             try
@@ -251,13 +252,12 @@ namespace OpinionAnalytics.Persistence.Repositories.Dwh
 
         #region Helpers
 
-        private static void NormalizeDto(DimensionLoadDto dto)
+        private static void NormalizeDto(DimensionLoadDto dto, ILogger logger)
         {
             foreach (var c in dto.Clientes)
             {
                 c.IdCliente = NormalizeId(c.IdCliente);
                 c.Nombre = NormalizeString(c.Nombre);
-                // Email no puede ser null según indicación: usar placeholder
                 c.Email = NormalizeOptionalString(c.Email, "Sin Email");
             }
 
@@ -265,7 +265,7 @@ namespace OpinionAnalytics.Persistence.Repositories.Dwh
             {
                 p.IdProducto = NormalizeId(p.IdProducto);
                 p.NombreProducto = NormalizeString(p.NombreProducto);
-                 p.Categoria = NormalizeOptionalString(p.Categoria, "Sin Categoría");
+                p.Categoria = NormalizeOptionalString(p.Categoria, "Sin Categoría");
                 p.Subcategoria = NormalizeOptionalString(p.Subcategoria, "Sin Subcategoría");
             }
 
@@ -295,14 +295,30 @@ namespace OpinionAnalytics.Persistence.Repositories.Dwh
                 t.Semana = System.Globalization.ISOWeek.GetWeekOfYear(date);
             }
 
+           
             dto.Clientes = dto.Clientes
                 .GroupBy(x => x.IdCliente, StringComparer.OrdinalIgnoreCase)
-                .Select(g => g.First())
+                .Select(g => g.OrderBy(c => string.IsNullOrWhiteSpace(c.Email) ? 1 : 0).First())
                 .ToList();
 
+            
             dto.Productos = dto.Productos
                 .GroupBy(x => x.IdProducto, StringComparer.OrdinalIgnoreCase)
-                .Select(g => g.First())
+                .Select(g => {
+                    var productos = g.ToList();
+                    
+                    var conCategoriaReal = productos.FirstOrDefault(p => 
+                        !string.IsNullOrWhiteSpace(p.Categoria) && 
+                        p.Categoria != "Sin Categoría" &&
+                        !p.Categoria.ToLower().Contains("sin"));
+            
+                    if (conCategoriaReal != null) return conCategoriaReal;
+            
+                    
+                    var conCategoria = productos.FirstOrDefault(p => !string.IsNullOrWhiteSpace(p.Categoria));
+            
+                    return conCategoria ?? productos.First();
+                })
                 .ToList();
 
             dto.Fuentes = dto.Fuentes
@@ -319,6 +335,20 @@ namespace OpinionAnalytics.Persistence.Repositories.Dwh
                 .GroupBy(x => x.Fecha.Date)
                 .Select(g => g.First())
                 .ToList();
+
+            var productosConCategoria = dto.Productos.Count(p => !string.IsNullOrWhiteSpace(p.Categoria) && p.Categoria != "Sin Categoría");
+            logger.LogInformation("Después de NormalizeDto: {Total} productos, {ConCategoria} con categoría válida", 
+                dto.Productos.Count, productosConCategoria);
+
+            if (productosConCategoria < 100) 
+            {
+                var ejemplos = dto.Productos.Where(p => !string.IsNullOrWhiteSpace(p.Categoria) && p.Categoria != "Sin Categoría")
+                                            .Take(10)
+                                            .Select(p => $"{p.IdProducto}:{p.Categoria}")
+                                            .ToList();
+                logger.LogWarning("Productos con categoría después de normalizar (ejemplos): {Ejemplos}", 
+                    string.Join(", ", ejemplos));
+            }
         }
 
         private static string NormalizeString(string? input)

@@ -108,65 +108,54 @@ namespace OpinionAnalytics.Application.Services
 
         private List<DimProducto> MapProductos(ExtractionResult extractionResult)
         {
+            _logger.LogInformation("=== MAPEO CON ENRIQUECIMIENTO DE PRODUCTOS ===");
+
+            
+            var categoriasLookup = extractionResult.ProductosMaestros
+                .ToDictionary(p => p.IdProducto, p => p.Categoria);
+            
+            _logger.LogInformation("📋 Categorías maestras: {Count} productos", categoriasLookup.Count);
+
             var raw = new List<(string IdProducto, string NombreProducto, string? Categoria, string Fuente)>();
 
+           
             foreach (var encuesta in extractionResult.EncuestasInternas)
             {
+                var categoria = categoriasLookup.ContainsKey(encuesta.IdProducto) 
+                    ? categoriasLookup[encuesta.IdProducto] 
+                    : null;
+
                 raw.Add((NormalizeProdId(encuesta.IdProducto.ToString()),
                          $"Producto {encuesta.IdProducto}",
-                         null,
-                         "CSV"));
+                         categoria, 
+                         "CSV_ENRIQUECIDO"));
             }
 
             foreach (var review in extractionResult.WebReviews)
             {
+                var categoria = string.IsNullOrWhiteSpace(review.ProductoCategoria) 
+                    ? null 
+                    : review.ProductoCategoria.Trim();
+                    
                 raw.Add((NormalizeProdId(review.IdProducto.ToString()),
                          string.IsNullOrWhiteSpace(review.ProductoNombre) ? "Sin Nombre" : review.ProductoNombre.Trim(),
-                         string.IsNullOrWhiteSpace(review.ProductoCategoria) ? null : review.ProductoCategoria.Trim(),
+                         categoria,
                          "WEB"));
             }
 
             foreach (var comment in extractionResult.SocialComments)
             {
+                var categoria = string.IsNullOrWhiteSpace(comment.ProductoCategoria) 
+                    ? null 
+                    : comment.ProductoCategoria.Trim();
+                    
                 raw.Add((NormalizeProdId(comment.IdProducto.ToString()),
                          string.IsNullOrWhiteSpace(comment.ProductoNombre) ? "Sin Nombre" : comment.ProductoNombre.Trim(),
-                         string.IsNullOrWhiteSpace(comment.ProductoCategoria) ? null : comment.ProductoCategoria.Trim(),
+                         categoria,
                          "API"));
             }
 
-            var distinctProductIds = raw.Select(r => r.IdProducto).Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
-            var productIdsWithAnyCategory = raw
-                .Where(r => !string.IsNullOrWhiteSpace(r.Categoria))
-                .Select(r => r.IdProducto)
-                .Distinct()
-                .ToList();
-
-            _logger.LogInformation("MapProductos - DistinctProducts={Total}, ProductsWithAnyCategoryInSources={WithCat}", 
-                distinctProductIds.Count, productIdsWithAnyCategory.Count);
-
-             var ejemplos = productIdsWithAnyCategory.Take(20)
-                .Select(id => new
-                {
-                    Id = id,
-                    Detalle = raw.Where(r => r.IdProducto == id)
-                                 .Select(r => $"{r.Fuente}:{(string.IsNullOrWhiteSpace(r.Categoria) ? "[no-cat]" : r.Categoria)}")
-                                 .Distinct()
-                                 .ToList()
-                })
-                .ToList();
-
-            if (ejemplos.Any())
-            {
-                var lines = ejemplos.Select(e => $"{e.Id} => {string.Join(", ", e.Detalle)}");
-                _logger.LogDebug("MapProductos - ejemplos de productos con categoría en fuentes (hasta 20): {Lines}", string.Join(" | ", lines));
-            }
-
-            var productIdsWithoutCategory = distinctProductIds.Except(productIdsWithAnyCategory).Take(20).ToList();
-            if (productIdsWithoutCategory.Any())
-            {
-                _logger.LogDebug("MapProductos - ejemplos de productos SIN categoría en fuentes (hasta 20): {Ids}", string.Join(", ", productIdsWithoutCategory));
-            }
-
+            
             var grouped = raw
                 .Where(r => !string.IsNullOrWhiteSpace(r.IdProducto))
                 .GroupBy(r => r.IdProducto, StringComparer.OrdinalIgnoreCase)
@@ -176,42 +165,83 @@ namespace OpinionAnalytics.Application.Services
             int categoriaEncontrada = 0;
             int categoriaPerdida = 0;
 
+            _logger.LogInformation("=== DEBUGGING PRODUCTOS ===");
+            _logger.LogInformation("WebReviews count: {Count}", extractionResult.WebReviews.Count());
+            _logger.LogInformation("SocialComments count: {Count}", extractionResult.SocialComments.Count());
+
+           
+            var webCategorias = extractionResult.WebReviews
+                .Take(10)
+                .Select(r => $"Id:{r.IdProducto} Cat:'{r.ProductoCategoria}'")
+                .ToList();
+                
+            _logger.LogInformation("WebReviews ejemplos: {Ejemplos}", string.Join(" | ", webCategorias));
+
+            var apiCategorias = extractionResult.SocialComments
+                .Take(10)
+                .Select(c => $"Id:{c.IdProducto} Cat:'{c.ProductoCategoria}'")
+                .ToList();
+                
+            _logger.LogInformation("SocialComments ejemplos: {Ejemplos}", string.Join(" | ", apiCategorias));
+
             foreach (var g in grouped)
             {
                 var entries = g.ToList();
+                
+               
+                var idProducto = g.Key;
+                var categoriasDisponibles = entries
+                    .Where(e => !string.IsNullOrWhiteSpace(e.Categoria))
+                    .Select(e => $"{e.Fuente}:{e.Categoria}")
+                    .ToList();
+                    
+                _logger.LogDebug("Producto {Id}: Categorías disponibles = [{Cats}]", 
+                    idProducto, string.Join(", ", categoriasDisponibles));
 
-                var specific = entries.FirstOrDefault(e => !string.IsNullOrWhiteSpace(e.Categoria) && !IsGenericCategory(e.Categoria));
-                if (specific.IdProducto != null && specific.Categoria != null)
+                
+                var withValidCategory = entries
+                    .Where(e => !string.IsNullOrWhiteSpace(e.Categoria) && !IsGenericCategory(e.Categoria))
+                    .OrderBy(e => GetSourcePriority(e.Fuente))
+                    .FirstOrDefault();
+
+                if (withValidCategory.IdProducto != null && withValidCategory.Categoria != null)
                 {
                     result.Add(new DimProducto
                     {
-                        IdProducto = specific.IdProducto,
+                        IdProducto = withValidCategory.IdProducto,
                         NombreProducto = GetBestProductName(entries),
-                        Categoria = specific.Categoria,
+                        Categoria = withValidCategory.Categoria,
                         Subcategoria = null
                     });
                     categoriaEncontrada++;
+                    
+                    _logger.LogDebug("Producto {Id}: Categoría asignada = '{Cat}' desde {Fuente}", 
+                        idProducto, withValidCategory.Categoria, withValidCategory.Fuente);
                     continue;
                 }
 
-                var withCategory = entries
+                 var withAnyCategory = entries
                     .Where(e => !string.IsNullOrWhiteSpace(e.Categoria))
                     .OrderBy(e => GetSourcePriority(e.Fuente))
                     .FirstOrDefault();
 
-                if (withCategory.IdProducto != null && withCategory.Categoria != null)
+                if (withAnyCategory.IdProducto != null && withAnyCategory.Categoria != null)
                 {
                     result.Add(new DimProducto
                     {
-                        IdProducto = withCategory.IdProducto,
+                        IdProducto = withAnyCategory.IdProducto,
                         NombreProducto = GetBestProductName(entries),
-                        Categoria = withCategory.Categoria,
+                        Categoria = withAnyCategory.Categoria,
                         Subcategoria = null
                     });
                     categoriaEncontrada++;
+                    
+                    _logger.LogDebug("Producto {Id}: Categoría fallback = '{Cat}' desde {Fuente}", 
+                        idProducto, withAnyCategory.Categoria, withAnyCategory.Fuente);
                     continue;
                 }
 
+                
                 var first = entries.First();
                 result.Add(new DimProducto
                 {
@@ -221,19 +251,13 @@ namespace OpinionAnalytics.Application.Services
                     Subcategoria = null
                 });
                 categoriaPerdida++;
+                
+                _logger.LogWarning("Producto {Id}: SIN CATEGORÍA - fuentes: [{Sources}]", 
+                    idProducto, string.Join(", ", entries.Select(e => $"{e.Fuente}:{e.Categoria ?? "null"}")));
             }
 
-            _logger.LogInformation("MapProductos: Total={Total}, ConCategoría={ConCat}, SinCategoría={SinCat}",
+            _logger.LogInformation("MapProductos FINAL: Total={Total}, ConCategoría={ConCat}, SinCategoría={SinCat}",
                 result.Count, categoriaEncontrada, categoriaPerdida);
-
-            if (categoriaPerdida > 0)
-            {
-                var sinCategoriaEjemplos = result.Where(p => string.IsNullOrWhiteSpace(p.Categoria))
-                                                .Take(10)
-                                                .Select(p => p.IdProducto)
-                                                .ToList();
-                _logger.LogWarning("Productos sin categoría final (ejemplos): {Ejemplos}", string.Join(", ", sinCategoriaEjemplos));
-            }
 
             return result;
         }
@@ -258,9 +282,10 @@ namespace OpinionAnalytics.Application.Services
         {
             return fuente switch
             {
-                "WEB" => 1,
-                "API" => 2,
-                "CSV" => 3,
+                "WEB" => 1,                
+                "API" => 2,                
+                "CSV_ENRIQUECIDO" => 3,    
+                "CSV" => 4,                
                 _ => 99
             };
         }
@@ -501,7 +526,16 @@ namespace OpinionAnalytics.Application.Services
         {
             if (string.IsNullOrWhiteSpace(categoria)) return true;
             var lower = categoria.Trim().ToLowerInvariant();
-            return lower.Contains("sin") || lower.Contains("desconocido") || lower.Contains("generales") || lower.Contains("otros");
+            
+            
+            return lower == "sin categoria" || 
+                   lower == "sin categoría" || 
+                   lower == "desconocido" || 
+                   lower == "otros" || 
+                   lower == "general" ||
+                   lower == "no definido" ||
+                   lower == "null" ||
+                   lower == "undefined";
         }
 
         #endregion

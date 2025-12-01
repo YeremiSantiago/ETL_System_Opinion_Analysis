@@ -298,7 +298,37 @@ namespace OpinionAnalytics.Application.Services
                     }
                 });
 
-                await Task.WhenAll(csvTask, dbTask, apiTask);
+                // ✅ NUEVAS TAREAS MAESTRAS
+                var productosTask = Task.Run(async () => 
+                {
+                    try
+                    {
+                        result.ProductosMaestros = await ExtractProductosMaestrosAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "⚠️ Error con productos maestros");
+                        result.ProductosMaestros = new List<ProductoCsv>();
+                        result.Errors.Add($"ProductosMaestros: {ex.Message}");
+                    }
+                });
+
+                var clientesTask = Task.Run(async () => 
+                {
+                    try
+                    {
+                        result.ClientesMaestros = await ExtractClientesMaestrosAsync();
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogWarning(ex, "⚠️ Error con clientes maestros");
+                        result.ClientesMaestros = new List<ClienteCsv>();
+                        result.Errors.Add($"ClientesMaestros: {ex.Message}");
+                    }
+                });
+
+                // ✅ ESPERAR TODAS LAS TAREAS
+                await Task.WhenAll(csvTask, dbTask, apiTask, productosTask, clientesTask);
 
                 stopwatch.Stop();
                 result.Metrics.TotalExtractionTime = stopwatch.Elapsed;
@@ -349,6 +379,92 @@ namespace OpinionAnalytics.Application.Services
             {
                 _logger.LogError(ex, "❌ Error refrescando cache de API");
                 throw;
+            }
+        }
+
+        // Nuevos métodos para extraer datos maestros
+        public async Task<IEnumerable<ProductoCsv>> ExtractProductosMaestrosAsync()
+        {
+            try
+            {
+                var productoCsvPath = Path.Combine(Path.GetDirectoryName(_dataSourcesConfig.CsvFilePath) ?? "", "productos.csv");
+                
+                _logger.LogInformation("Extrayendo productos maestros desde: {FilePath}", productoCsvPath);
+
+                if (!File.Exists(productoCsvPath))
+                {
+                    _logger.LogWarning("Archivo de productos maestros no encontrado: {Path}", productoCsvPath);
+                    return new List<ProductoCsv>();
+                }
+
+                var productos = new List<ProductoCsv>();
+                var lines = await File.ReadAllLinesAsync(productoCsvPath);
+                
+                foreach (var line in lines.Skip(1)) // Saltar header
+                {
+                    var parts = line.Split(',');
+                    if (parts.Length >= 3 && int.TryParse(parts[0], out var id))
+                    {
+                        productos.Add(new ProductoCsv
+                        {
+                            IdProducto = id,
+                            Nombre = parts[1].Trim('"'),
+                            Categoria = parts[2].Trim('"')
+                        });
+                    }
+                }
+
+                _logger.LogInformation("✅ Productos maestros cargados: {Count} registros", productos.Count);
+                return productos;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error cargando productos maestros");
+                return new List<ProductoCsv>();
+            }
+        }
+
+        public async Task<IEnumerable<ClienteCsv>> ExtractClientesMaestrosAsync()
+        {
+            try
+            {
+                var clienteCsvPath = Path.Combine(Path.GetDirectoryName(_dataSourcesConfig.CsvFilePath) ?? "", "clientes.csv");
+                
+                _logger.LogInformation("Extrayendo clientes maestros desde: {FilePath}", clienteCsvPath);
+
+                if (!File.Exists(clienteCsvPath))
+                {
+                    _logger.LogWarning("Archivo de clientes maestros no encontrado: {Path}", clienteCsvPath);
+                    return new List<ClienteCsv>();
+                }
+
+                var clientes = new List<ClienteCsv>();
+                var lines = await File.ReadAllLinesAsync(clienteCsvPath);
+                
+                foreach (var line in lines.Skip(1)) // Saltar header
+                {
+                    var parts = line.Split(',');
+                    if (parts.Length >= 3 && int.TryParse(parts[0], out var id))
+                    {
+                        clientes.Add(new ClienteCsv
+                        {
+                            IdCliente = id,
+                            Nombre = parts[1].Trim('"'),
+                            Email = parts[2].Trim('"'),
+                            Telefono = parts.Length > 3 ? parts[3].Trim('"') : null,
+                            Ciudad = parts.Length > 4 ? parts[4].Trim('"') : null,
+                            FechaRegistro = parts.Length > 5 && DateTime.TryParse(parts[5], out var fecha) ? fecha : null
+                        });
+                    }
+                }
+
+                _logger.LogInformation("✅ Clientes maestros cargados: {Count} registros", clientes.Count);
+                return clientes;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Error cargando clientes maestros");
+                return new List<ClienteCsv>();
             }
         }
     }

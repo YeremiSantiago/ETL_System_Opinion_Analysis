@@ -13,6 +13,10 @@ public class ExtractionResult
     public IEnumerable<WebReviewView> WebReviews { get; set; } = new List<WebReviewView>();
     public IEnumerable<SocialCommentView> SocialComments { get; set; } = new List<SocialCommentView>();
     
+ 
+    public IEnumerable<ProductoCsv> ProductosMaestros { get; set; } = new List<ProductoCsv>();
+    public IEnumerable<ClienteCsv> ClientesMaestros { get; set; } = new List<ClienteCsv>();
+    
     public DateTime ExtractionTimestamp { get; set; } = DateTime.UtcNow;
     public string Status { get; set; } = "Success";
     public List<string> Errors { get; set; } = new();
