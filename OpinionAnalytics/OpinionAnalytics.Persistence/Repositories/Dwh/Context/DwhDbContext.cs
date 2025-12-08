@@ -1,5 +1,6 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using OpinionAnalytics.Domain.Entities.Dwh.Dimensions;
+using OpinionAnalytics.Domain.Entities.Dwh.Facts;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -18,8 +19,14 @@ namespace OpinionAnalytics.Persistence.Repositories.Dwh.Context
         public DbSet<DimSentimiento> DimSentimientos { get; set; }
         public DbSet<DimTiempo> DimTiempos { get; set; }
 
+        
+        public DbSet<FactOpiniones> FactOpiniones { get; set; }
 
+        protected override void OnModelCreating(ModelBuilder modelBuilder)
+        {
+            base.OnModelCreating(modelBuilder);
 
-
+           
+        }
     }
 }

@@ -9,6 +9,7 @@ using OpinionAnalytics.Persistence.Repositories.Api;
 using OpinionAnalytics.Persistence.Repositories.Csv;
 using OpinionAnalytics.Persistence.Repositories.Dwh;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace OpinionAnalytics.WorkerServiceLoadDWH
 {
@@ -44,7 +45,7 @@ namespace OpinionAnalytics.WorkerServiceLoadDWH
 
            
             builder.Services.AddScoped<IDimensionLoadRepository, DimensionLoadRepository>();
-
+            builder.Services.AddScoped<IFactLoadRepository, FactLoadRepository>();
 
             builder.Services.AddScoped<IDataExtractionService, DataExtractionService>();
             builder.Services.AddScoped<IDimensionMappingService, DimensionMappingService>();
